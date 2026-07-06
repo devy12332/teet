@@ -227,12 +227,11 @@
 
         if (currentCircle) map.removeLayer(currentCircle);
         currentMarkers.clearLayers();
-        console.log('Используется запрос:', query);
         document.getElementById('debug').innerHTML = '';
         document.getElementById('shop-list').innerHTML = '<li class="no-shops">Ищем магазины...</li>';
         
         document.getElementById('info').innerText = 'Ищем магазины... Подождите.';
-
+        console.log('Используется запрос:', query);
         currentCircle = L.circle([lat, lon], {
             radius: radius, color: '#3388ff', fillOpacity: 0.1
         }).addTo(map);
