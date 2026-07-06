@@ -241,8 +241,15 @@
         const query = `
             [out:json][timeout:30];
             (
-              node(around:${radius},${lat},${lon})["shop"="supermarket"];
-              node(around:${radius},${lat},${lon})["shop"="convenience"];
+            node(around:${radius},${lat},${lon})["shop"="supermarket"];
+          node(around:${radius},${lat},${lon})["shop"="convenience"];
+          node(around:${radius},${lat},${lon})["shop"="grocery"];
+          node(around:${radius},${lat},${lon})["shop"="general"];
+          node(around:${radius},${lat},${lon})["shop"="department_store"];
+          node(around:${radius},${lat},${lon})["shop"="alcohol"];
+          node(around:${radius},${lat},${lon})["shop"="beverages"];
+          node(around:${radius},${lat},${lon})["shop"="variety_store"];
+          node(around:${radius},${lat},${lon})["shop"="wholesale"];
             );
             out;
         `;
