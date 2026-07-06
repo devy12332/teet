@@ -236,14 +236,15 @@ map.on('click', async function(e) {
 
     log(`Координаты: ${lat.toFixed(6)}, ${lon.toFixed(6)}`);
 
-    // ⚠️ Сначала ОБЪЯВЛЯЕМ query, потом используем
+    // 1. ОБЪЯВЛЯЕМ query ПЕРЕД ИСПОЛЬЗОВАНИЕМ
     const query = `
         [out:json][timeout:30];
         nwr(around:${radius},${lat},${lon})["shop"];
         out center;
     `;
 
-    console.log('Запрос:', query);   // ✅ теперь безопасно
+    // 2. ТЕПЕРЬ МОЖНО ИСПОЛЬЗОВАТЬ
+    console.log('Запрос:', query);   // ошибки не будет
 
     const servers = [
         `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`,
