@@ -151,114 +151,153 @@
         });
     }
 
-    map.on('click', async function(e) {
-        const lat = e.latlng.lat;
-        const lon = e.latlng.lng;
-        const radius = 1000;
-        clickLatLng = e.latlng;
+map.on('click', async function(e) {
+    const lat = e.latlng.lat;
+    const lon = e.latlng.lng;
+    const radius = 1000;
+    clickLatLng = e.latlng;
 
-        if (currentCircle) map.removeLayer(currentCircle);
-        currentMarkers.clearLayers();
-        document.getElementById('debug').innerHTML = '';
-        document.getElementById('shop-list').innerHTML = '<li class="no-shops">Ищем магазины...</li>';
-        document.getElementById('info').innerText = 'Ищем магазины... Подождите.';
+    if (currentCircle) map.removeLayer(currentCircle);
+    currentMarkers.clearLayers();
+    document.getElementById('debug').innerHTML = '';
+    document.getElementById('shop-list').innerHTML = '<li class="no-shops">Ищем магазины...</li>';
+    document.getElementById('info').innerText = 'Ищем магазины... Подождите.';
 
-        currentCircle = L.circle([lat, lon], {
-            radius: radius, color: '#3388ff', fillOpacity: 0.1
-        }).addTo(map);
+    currentCircle = L.circle([lat, lon], {
+        radius: radius, color: '#3388ff', fillOpacity: 0.1
+    }).addTo(map);
 
-        log(`Координаты: ${lat.toFixed(6)}, ${lon.toFixed(6)}`);
+    log(`Координаты: ${lat.toFixed(6)}, ${lon.toFixed(6)}`);
 
-        // Два запроса: для точек и для площадных объектов
-        const queryNodes = `[out:json][timeout:30]; node(around:${radius},${lat},${lon})["shop"]; out;`;
-        const queryWays = `[out:json][timeout:30]; (way(around:${radius},${lat},${lon})["shop"]; relation(around:${radius},${lat},${lon})["shop"];); out center;`;
+    // Запрос с out geom для получения геометрии всех объектов
+    const query = `
+        [out:json][timeout:30];
+        nwr(around:${radius},${lat},${lon})["shop"];
+        out geom;
+    `;
 
-        const servers = [
-            'https://overpass-api.de/api/interpreter',
-            'https://overpass.openstreetmap.ru/api/interpreter',
-            'https://overpass.kumi.systems/api/interpreter'
-        ];
+    console.log('Запрос:', query);
 
-        async function fetchOverpass(query) {
-            for (const server of servers) {
-                const url = `${server}?data=${encodeURIComponent(query)}`;
-                try {
-                    const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
-                    if (resp.ok) return await resp.json();
-                } catch (e) {}
-            }
-            return null;
+    const servers = [
+        `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`,
+        `https://overpass.openstreetmap.ru/api/interpreter?data=${encodeURIComponent(query)}`,
+        `https://overpass.kumi.systems/api/interpreter?data=${encodeURIComponent(query)}`
+    ];
+
+    let data = null;
+    let lastError = null;
+
+    for (let i = 0; i < servers.length; i++) {
+        const url = servers[i];
+        log(`Попытка ${i + 1}: сервер ${i + 1}`);
+        try {
+            const response = await fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' } });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            data = await response.json();
+            log(`Успешно получены данные`, 'success');
+            break;
+        } catch (error) {
+            lastError = error;
+            log(`Ошибка: ${error.message}`, 'error');
         }
+    }
 
-        const [dataNodes, dataWays] = await Promise.all([
-            fetchOverpass(queryNodes),
-            fetchOverpass(queryWays)
-        ]);
+    if (!data) {
+        document.getElementById('info').innerText = 'Не удалось получить данные.';
+        document.getElementById('shop-list').innerHTML = '<li class="no-shops">Ошибка загрузки</li>';
+        return;
+    }
 
-        const allElements = [];
-        if (dataNodes && dataNodes.elements) allElements.push(...dataNodes.elements);
-        if (dataWays && dataWays.elements) allElements.push(...dataWays.elements);
+    console.log('Всего элементов в ответе:', data.elements?.length || 0);
 
-        if (allElements.length === 0) {
-            document.getElementById('info').innerText = 'Магазины не найдены в этом районе';
-            renderShopList([]);
-            log('Магазины не найдены', 'error');
+    if (!data.elements || data.elements.length === 0) {
+        document.getElementById('info').innerText = 'Магазины не найдены в этом районе';
+        renderShopList([]);
+        return;
+    }
+
+    const shopsData = [];
+    const addedIds = new Set();
+
+    // Функция вычисления центра геометрии
+    function getCentroid(el) {
+        if (el.type === 'node' && el.lat !== undefined && el.lon !== undefined) {
+            return { lat: el.lat, lon: el.lon };
+        }
+        if (el.geometry && Array.isArray(el.geometry)) {
+            let sumLat = 0, sumLon = 0, count = 0;
+            el.geometry.forEach(point => {
+                if (point.lat !== undefined && point.lon !== undefined) {
+                    sumLat += point.lat;
+                    sumLon += point.lon;
+                    count++;
+                }
+            });
+            if (count > 0) {
+                return { lat: sumLat / count, lon: sumLon / count };
+            }
+        }
+        return null;
+    }
+
+    data.elements.forEach(el => {
+        const centroid = getCentroid(el);
+        if (!centroid) {
+            console.warn('Элемент без координат:', el.type, el.id);
             return;
         }
 
-        const shopsData = [];
-        const addedIds = new Set();
-
-        allElements.forEach(el => {
-            // Пропускаем элементы без lat/lon (обычно не должно быть после out center, но на всякий случай)
-            if (el.lat === undefined || el.lon === undefined) return;
-
-            const elementKey = `${el.type}/${el.id}`;
-            if (addedIds.has(elementKey)) return;
-            addedIds.add(elementKey);
-
-            const name = el.tags?.name || 'Магазин';
-            const shopType = el.tags?.shop || 'магазин';
-            const brandInfo = getBrandInfo(name);
-            const distance = clickLatLng.distanceTo(L.latLng(el.lat, el.lon));
-
-            const address = el.tags?.['addr:street']
-                ? el.tags['addr:street'] + (el.tags['addr:housenumber'] ? ', ' + el.tags['addr:housenumber'] : '')
-                : '';
-
-            const marker = L.circleMarker([el.lat, el.lon], {
-                radius: 7, fillColor: brandInfo.color, color: '#fff',
-                weight: 2, opacity: 1, fillOpacity: 0.9
-            }).addTo(currentMarkers);
-
-            marker.bindPopup(`
-                <b>${brandInfo.brand}</b><br>
-                Тип: ${shopType}<br>
-                ${address ? 'Адрес: ' + address + '<br>' : ''}
-                <b>Расстояние: ${formatDistance(distance)}</b>
-            `);
-
-            shopsData.push({
-                brand: brandInfo.brand,
-                type: shopType,
-                address: address,
-                color: brandInfo.color,
-                lat: el.lat,
-                lon: el.lon,
-                distance: distance,
-                marker: marker
-            });
-        });
-
-        renderShopList(shopsData);
-        document.getElementById('info').innerText = `Найдено магазинов: ${shopsData.length} (в радиусе 1 км)`;
-        log(`Отображено: ${shopsData.length} магазинов`, 'success');
-
-        if (shopsData.length > 0) {
-            const bounds = L.latLngBounds(shopsData.map(s => [s.lat, s.lon]));
-            map.fitBounds(bounds, { padding: [50, 50] });
+        const elementKey = `${el.type}/${el.id}`;
+        if (addedIds.has(elementKey)) {
+            console.warn('Пропущен дубль:', elementKey);
+            return;
         }
+        addedIds.add(elementKey);
+
+        const name = el.tags?.name || 'Магазин';
+        const shopType = el.tags?.shop || 'магазин';
+        const brandInfo = getBrandInfo(name);
+        const shopLatLng = L.latLng(centroid.lat, centroid.lon);
+        const distance = clickLatLng.distanceTo(shopLatLng);
+
+        const address = el.tags?.['addr:street']
+            ? el.tags['addr:street'] + (el.tags['addr:housenumber'] ? ', ' + el.tags['addr:housenumber'] : '')
+            : '';
+
+        const marker = L.circleMarker([centroid.lat, centroid.lon], {
+            radius: 7, fillColor: brandInfo.color, color: '#fff',
+            weight: 2, opacity: 1, fillOpacity: 0.9
+        }).addTo(currentMarkers);
+
+        marker.bindPopup(`
+            <b>${brandInfo.brand}</b><br>
+            Тип: ${shopType}<br>
+            ${address ? 'Адрес: ' + address + '<br>' : ''}
+            <b>Расстояние: ${formatDistance(distance)}</b>
+        `);
+
+        shopsData.push({
+            brand: brandInfo.brand,
+            type: shopType,
+            address: address,
+            color: brandInfo.color,
+            lat: centroid.lat,
+            lon: centroid.lon,
+            distance: distance,
+            marker: marker
+        });
     });
+
+    renderShopList(shopsData);
+    document.getElementById('info').innerText = `Найдено магазинов: ${shopsData.length} (в радиусе 1 км)`;
+    log(`Отображено: ${shopsData.length} магазинов`, 'success');
+
+    // Правильное масштабирование без currentMarkers.getBounds()
+    if (shopsData.length > 0) {
+        const bounds = L.latLngBounds(shopsData.map(s => [s.lat, s.lon]));
+        map.fitBounds(bounds, { padding: [50, 50] });
+    }
+});
 </script>
 </body>
 </html>
