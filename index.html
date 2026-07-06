@@ -9,12 +9,110 @@
     <style>
         body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
         #map { height: 100vh; width: 100%; }
+        
         #info {
             position: absolute; top: 10px; left: 50px; z-index: 1000;
             background: white; padding: 10px 15px; border-radius: 5px;
             box-shadow: 0 2px 5px rgba(0,0,0,0.2); font-size: 14px;
             max-width: 400px;
         }
+        
+        /* === НОВАЯ ПРАВАЯ ПАНЕЛЬ === */
+        #sidebar {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 1000;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.25);
+            width: 320px;
+            max-height: calc(100vh - 20px);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        #sidebar-header {
+            padding: 12px 15px;
+            background: #2c3e50;
+            color: white;
+            font-weight: bold;
+            font-size: 15px;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        #shop-list {
+            overflow-y: auto;
+            flex: 1;
+            padding: 0;
+            margin: 0;
+            list-style: none;
+        }
+        
+        .shop-item {
+            padding: 10px 15px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .shop-item:hover {
+            background: #f0f8ff;
+        }
+        
+        .shop-item:last-child {
+            border-bottom: none;
+        }
+        
+        .shop-name {
+            font-weight: bold;
+            font-size: 14px;
+            color: #2c3e50;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .shop-color-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            border: 1px solid #fff;
+            box-shadow: 0 0 2px rgba(0,0,0,0.5);
+        }
+        
+        .shop-type {
+            font-size: 12px;
+            color: #777;
+            margin-top: 2px;
+        }
+        
+        .shop-address {
+            font-size: 12px;
+            color: #555;
+            margin-top: 2px;
+        }
+        
+        .shop-distance {
+            display: inline-block;
+            margin-top: 5px;
+            padding: 2px 8px;
+            background: #e8f4f8;
+            color: #0066aa;
+            border-radius: 10px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .no-shops {
+            padding: 20px;
+            text-align: center;
+            color: #888;
+            font-style: italic;
+        }
+        
         #debug {
             position: absolute; bottom: 10px; left: 10px; z-index: 1000;
             background: rgba(255,255,255,0.95); padding: 10px; border-radius: 5px;
@@ -29,6 +127,15 @@
 <body>
 
 <div id="info">Кликните в любую точку на карте, чтобы найти магазины в радиусе 1 км</div>
+
+<!-- === НОВАЯ ПРАВАЯ ПАНЕЛЬ === -->
+<div id="sidebar">
+    <div id="sidebar-header">Список магазинов</div>
+    <ul id="shop-list">
+        <li class="no-shops">Кликните по карте для поиска</li>
+    </ul>
+</div>
+
 <div id="debug"></div>
 <div id="map"></div>
 
@@ -41,6 +148,7 @@
 
     let currentCircle = null;
     let currentMarkers = L.layerGroup().addTo(map);
+    let clickLatLng = null; // Точка клика для расчёта расстояний
 
     function log(message, type = 'info') {
         const debugDiv = document.getElementById('debug');
@@ -50,14 +158,77 @@
         console.log(message);
     }
 
+    // Функция форматирования расстояния
+    function formatDistance(meters) {
+        if (meters < 1000) {
+            return Math.round(meters) + ' м';
+        }
+        return (meters / 1000).toFixed(2) + ' км';
+    }
+
+    // Функция определения бренда и цвета
+    function getBrandInfo(name) {
+        const nameLower = name.toLowerCase();
+        if (nameLower.includes('пятёрочка') || nameLower.includes('пятерочка')) return { color: '#e30613', brand: 'Пятёрочка' };
+        if (nameLower.includes('магнит')) return { color: '#e30613', brand: 'Магнит' };
+        if (nameLower.includes('монетка')) return { color: '#ff9900', brand: 'Монетка' };
+        if (nameLower.includes('чижик')) return { color: '#ffd700', brand: 'Чижик' };
+        if (nameLower.includes('дикси')) return { color: '#ffcc00', brand: 'Дикси' };
+        if (nameLower.includes('перекрёсток') || nameLower.includes('перекресток')) return { color: '#d52b1e', brand: 'Перекрёсток' };
+        if (nameLower.includes('красное') && nameLower.includes('белое')) return { color: '#d52b1e', brand: 'Красное&Белое' };
+        if (nameLower.includes('бристоль')) return { color: '#005eb8', brand: 'Бристоль' };
+        if (nameLower.includes('верный')) return { color: '#00a651', brand: 'Верный' };
+        if (nameLower.includes('семья')) return { color: '#00a651', brand: 'Семья' };
+        return { color: '#999', brand: name };
+    }
+
+    // Функция отрисовки списка магазинов в правой панели
+    function renderShopList(shopsData) {
+        const list = document.getElementById('shop-list');
+        list.innerHTML = '';
+
+        if (shopsData.length === 0) {
+            list.innerHTML = '<li class="no-shops">Магазины не найдены</li>';
+            return;
+        }
+
+        // Сортируем по расстоянию (от ближнего к дальнему)
+        shopsData.sort((a, b) => a.distance - b.distance);
+
+        shopsData.forEach((shop, index) => {
+            const li = document.createElement('li');
+            li.className = 'shop-item';
+            li.innerHTML = `
+                <div class="shop-name">
+                    <span class="shop-color-dot" style="background:${shop.color}"></span>
+                    ${index + 1}. ${shop.brand}
+                </div>
+                <div class="shop-type">Тип: ${shop.type}</div>
+                ${shop.address ? `<div class="shop-address">📍 ${shop.address}</div>` : ''}
+                <span class="shop-distance">🚶 ${formatDistance(shop.distance)}</span>
+            `;
+            
+            // При клике на элемент списка — центрируем карту на магазине
+            li.addEventListener('click', () => {
+                map.setView([shop.lat, shop.lon], 17);
+                shop.marker.openPopup();
+            });
+            
+            list.appendChild(li);
+        });
+    }
+
     map.on('click', async function(e) {
         const lat = e.latlng.lat;
         const lon = e.latlng.lng;
         const radius = 1000;
 
+        clickLatLng = e.latlng; // Сохраняем точку клика
+
         if (currentCircle) map.removeLayer(currentCircle);
         currentMarkers.clearLayers();
         document.getElementById('debug').innerHTML = '';
+        document.getElementById('shop-list').innerHTML = '<li class="no-shops">Ищем магазины...</li>';
         
         document.getElementById('info').innerText = 'Ищем магазины... Подождите.';
 
@@ -67,7 +238,6 @@
 
         log(`Координаты: ${lat.toFixed(6)}, ${lon.toFixed(6)}`);
 
-        // Используем Overpass через GET запрос (лучше работает с CORS)
         const query = `
             [out:json][timeout:30];
             (
@@ -77,7 +247,6 @@
             out;
         `;
 
-        // Пробуем разные серверы с GET запросом
         const servers = [
             `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`,
             `https://overpass.openstreetmap.ru/api/interpreter?data=${encodeURIComponent(query)}`,
@@ -92,21 +261,11 @@
             log(`Попытка ${i + 1}: сервер ${i + 1}`);
 
             try {
-                const response = await fetch(url, {
-                    method: 'GET',
-                    headers: {
-                        'Accept': 'application/json'
-                    }
-                });
-
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
-                }
-
+                const response = await fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' } });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 data = await response.json();
                 log(`Успешно получены данные`, 'success');
                 break;
-
             } catch (error) {
                 lastError = error;
                 log(`Ошибка: ${error.message}`, 'error');
@@ -114,88 +273,69 @@
         }
 
         if (!data) {
-            document.getElementById('info').innerText = 'Не удалось получить данные. Запустите локальный сервер.';
-            log(`Все попытки неудачны: ${lastError?.message}`, 'error');
+            document.getElementById('info').innerText = 'Не удалось получить данные.';
+            document.getElementById('shop-list').innerHTML = '<li class="no-shops">Ошибка загрузки</li>';
             return;
         }
 
         if (!data.elements || data.elements.length === 0) {
             document.getElementById('info').innerText = 'Магазины не найдены в этом районе';
-            log('Магазины не найдены', 'error');
+            renderShopList([]);
             return;
         }
 
-        let count = 0;
+        // === НОВАЯ ЛОГИКА: собираем данные о магазинах с расстоянием ===
+        const shopsData = [];
+
         data.elements.forEach(el => {
             const elLat = el.lat;
             const elLon = el.lon;
-            
             if (!elLat || !elLon) return;
 
             const name = el.tags.name || 'Магазин';
             const shopType = el.tags.shop || 'магазин';
+            const brandInfo = getBrandInfo(name);
 
-            let color = '#666';
-            let brandName = '';
-            
-            const nameLower = name.toLowerCase();
-            
-            if (nameLower.includes('пятёрочка') || nameLower.includes('пятерочка')) {
-                color = '#e30613';
-                brandName = 'Пятёрочка';
-            } else if (nameLower.includes('магнит')) {
-                color = '#e30613';
-                brandName = 'Магнит';
-            } else if (nameLower.includes('монетка')) {
-                color = '#ff9900';
-                brandName = 'Монетка';
-            } else if (nameLower.includes('чижик')) {
-                color = '#ffd700';
-                brandName = 'Чижик';
-            } else if (nameLower.includes('дикси')) {
-                color = '#ffcc00';
-                brandName = 'Дикси';
-            } else if (nameLower.includes('перекрёсток') || nameLower.includes('перекресток')) {
-                color = '#d52b1e';
-                brandName = 'Перекрёсток';
-            } else if (nameLower.includes('красное') && nameLower.includes('белое')) {
-                color = '#d52b1e';
-                brandName = 'Красное&Белое';
-            } else if (nameLower.includes('бристоль')) {
-                color = '#005eb8';
-                brandName = 'Бристоль';
-            } else if (nameLower.includes('верный')) {
-                color = '#00a651';
-                brandName = 'Верный';
-            } else if (nameLower.includes('семья')) {
-                color = '#00a651';
-                brandName = 'Семья';
-            } else {
-                brandName = name;
-                color = '#999';
-            }
-
-            const marker = L.circleMarker([elLat, elLon], {
-                radius: 7, fillColor: color, color: '#fff',
-                weight: 2, opacity: 1, fillOpacity: 0.9
-            }).addTo(currentMarkers);
+            // Считаем расстояние от точки клика до магазина (в метрах)
+            const distance = clickLatLng.distanceTo(L.latLng(elLat, elLon));
 
             const address = el.tags['addr:street'] 
                 ? el.tags['addr:street'] + (el.tags['addr:housenumber'] ? ', ' + el.tags['addr:housenumber'] : '')
                 : '';
 
+            // Создаём маркер
+            const marker = L.circleMarker([elLat, elLon], {
+                radius: 7, fillColor: brandInfo.color, color: '#fff',
+                weight: 2, opacity: 1, fillOpacity: 0.9
+            }).addTo(currentMarkers);
+
             marker.bindPopup(`
-                <b>${brandName}</b><br>
+                <b>${brandInfo.brand}</b><br>
                 Тип: ${shopType}<br>
-                ${address ? 'Адрес: ' + address : ''}
+                ${address ? 'Адрес: ' + address + '<br>' : ''}
+                <b>Расстояние: ${formatDistance(distance)}</b>
             `);
-            count++;
+
+            // Сохраняем данные для списка
+            shopsData.push({
+                brand: brandInfo.brand,
+                type: shopType,
+                address: address,
+                color: brandInfo.color,
+                lat: elLat,
+                lon: elLon,
+                distance: distance,
+                marker: marker
+            });
         });
 
-        document.getElementById('info').innerText = `Найдено магазинов: ${count} (в радиусе 1 км)`;
-        log(`Отображено: ${count} магазинов`, 'success');
+        // Отрисовываем список в правой панели
+        renderShopList(shopsData);
+
+        document.getElementById('info').innerText = `Найдено магазинов: ${shopsData.length} (в радиусе 1 км)`;
+        log(`Отображено: ${shopsData.length} магазинов`, 'success');
         
-        if (count > 0) {
+        if (shopsData.length > 0) {
             map.fitBounds(currentMarkers.getBounds(), { padding: [50, 50] });
         }
     });
