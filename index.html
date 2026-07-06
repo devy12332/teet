@@ -109,9 +109,9 @@
     let currentCircle = null;
     let currentMarkers = L.layerGroup().addTo(map);
     let clickLatLng = null;
-    let currentShopsData = []; // храним все магазины для фильтрации
+    let currentShopsData = [];
 
-    // Список исключаемых типов магазинов
+    // Исключаемые типы магазинов (редактируйте при необходимости)
     const excludedShopTypes = [
         'florist', 'greengrocer', 'outpost', 'shoes',
         'pet', 'fishing', 'garden_centre', 'sports',
@@ -144,12 +144,10 @@
         return { color: '#999', brand: name };
     }
 
-    // Рендер списка с учётом фильтра
     function renderShopList(filterText = '') {
         const list = document.getElementById('shop-list');
         list.innerHTML = '';
 
-        // Фильтруем по названию
         let filtered = currentShopsData;
         if (filterText.trim() !== '') {
             const lowerFilter = filterText.trim().toLowerCase();
@@ -161,7 +159,6 @@
             return;
         }
 
-        // Сортируем по расстоянию
         filtered.sort((a, b) => a.distance - b.distance);
 
         filtered.forEach((shop, index) => {
@@ -184,7 +181,6 @@
         });
     }
 
-    // Обработчик ввода фильтра
     document.getElementById('filter-input').addEventListener('input', function(e) {
         renderShopList(e.target.value);
     });
@@ -198,7 +194,7 @@
         if (currentCircle) map.removeLayer(currentCircle);
         currentMarkers.clearLayers();
         document.getElementById('debug').innerHTML = '';
-        document.getElementById('filter-input').value = ''; // сбрасываем фильтр
+        document.getElementById('filter-input').value = '';
         document.getElementById('shop-list').innerHTML = '<li class="no-shops">Ищем магазины...</li>';
         document.getElementById('info').innerText = 'Ищем магазины... Подождите.';
 
@@ -208,6 +204,7 @@
 
         log(`Координаты: ${lat.toFixed(6)}, ${lon.toFixed(6)}`);
 
+        // Два запроса: точки и площадные объекты с центроидами
         const queryNodes = `[out:json][timeout:30]; node(around:${radius},${lat},${lon})["shop"]; out;`;
         const queryWays = `[out:json][timeout:30]; (way(around:${radius},${lat},${lon})["shop"]; relation(around:${radius},${lat},${lon})["shop"];); out center;`;
 
@@ -249,6 +246,7 @@
         const addedIds = new Set();
 
         allElements.forEach(el => {
+            // После out center у площадных объектов всегда есть lat/lon
             if (el.lat === undefined || el.lon === undefined) return;
 
             const shopType = el.tags?.shop || 'магазин';
@@ -290,8 +288,8 @@
             });
         });
 
-        currentShopsData = shopsData; // сохраняем для фильтра
-        renderShopList(); // отображаем все (фильтр пуст)
+        currentShopsData = shopsData;
+        renderShopList();
         document.getElementById('info').innerText = `Найдено магазинов: ${shopsData.length} (в радиусе 1 км)`;
         log(`Отображено: ${shopsData.length} магазинов`, 'success');
 
