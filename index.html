@@ -33,16 +33,6 @@
             border-bottom: 1px solid #ddd;
         }
 
-        #filter-input {
-            width: 100%;
-            padding: 8px 10px;
-            margin-top: 8px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            font-size: 14px;
-            box-sizing: border-box;
-        }
-
         #category-filters {
             padding: 8px 15px;
             border-bottom: 1px solid #ddd;
@@ -99,7 +89,7 @@
             background: rgba(255,255,255,0.95); padding: 10px; border-radius: 5px;
             box-shadow: 0 2px 5px rgba(0,0,0,0.2); font-size: 12px;
             max-width: 500px; max-height: 200px; overflow-y: auto;
-            display: block; /* всегда видна для диагностики */
+            display: block;
         }
         .error { color: red; }
         .success { color: green; }
@@ -108,10 +98,7 @@
 <body>
 <div id="info">Кликните в любую точку на карте, чтобы найти магазины в радиусе 1 км</div>
 <div id="sidebar">
-    <div id="sidebar-header">
-        Список магазинов
-        <input type="text" id="filter-input" placeholder="Фильтр по названию..." />
-    </div>
+    <div id="sidebar-header">Список магазинов</div>
     <div id="category-filters"></div>
     <ul id="shop-list"><li class="no-shops">Кликните по карте для поиска</li></ul>
 </div>
@@ -130,12 +117,11 @@
     let currentShopsData = [];
     let isSearching = false;
 
-    // Исключаемые типы магазинов (полностью убираются из результатов)
-//    const excludedShopTypes = [
-//        'florist', 'greengrocer', 'outpost', 'shoes',
-//        'pet', 'fishing', 'garden_centre', 'sports',
-//        'hardware', 'tyres', 'car_repair'
-//    ];
+    const excludedShopTypes = [
+        'florist', 'greengrocer', 'outpost', 'shoes',
+        'pet', 'fishing', 'garden_centre', 'sports',
+        'hardware', 'tyres', 'car_repair'
+    ];
 
     function log(message, type = 'info') {
         const debugDiv = document.getElementById('debug');
@@ -189,24 +175,18 @@
         });
     }
 
-    function renderShopList(filterText = null) {
+    function renderShopList() {
         const list = document.getElementById('shop-list');
         list.innerHTML = '';
 
         const selectedTypes = getSelectedTypes();
-        const searchText = (filterText !== null) ? filterText : document.getElementById('filter-input').value;
-
         let filtered = currentShopsData.filter(shop => selectedTypes.has(shop.type));
-        if (searchText.trim() !== '') {
-            const lowerFilter = searchText.trim().toLowerCase();
-            filtered = filtered.filter(shop => shop.brand.toLowerCase().includes(lowerFilter));
-        }
 
         currentMarkers.clearLayers();
         filtered.forEach(shop => currentMarkers.addLayer(shop.marker));
 
         if (filtered.length === 0) {
-            list.innerHTML = '<li class="no-shops">Нет магазинов, удовлетворяющих фильтрам</li>';
+            list.innerHTML = '<li class="no-shops">Нет магазинов выбранных категорий</li>';
             document.getElementById('info').innerText = 'Нет магазинов по заданным условиям';
             return;
         }
@@ -234,11 +214,6 @@
         document.getElementById('info').innerText = `Отображено магазинов: ${filtered.length} из ${currentShopsData.length}`;
     }
 
-    document.getElementById('filter-input').addEventListener('input', function(e) {
-        renderShopList(e.target.value);
-    });
-
-    // Улучшенная функция запроса с подробными логами
     async function fetchWithRetry(url, timeout = 15000, retries = 3) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeout);
@@ -292,7 +267,6 @@
         if (currentCircle) map.removeLayer(currentCircle);
         currentMarkers.clearLayers();
         document.getElementById('debug').innerHTML = '';
-        document.getElementById('filter-input').value = '';
         document.getElementById('category-filters').innerHTML = '';
         document.getElementById('shop-list').innerHTML = '<li class="no-shops">Ищем магазины...</li>';
         document.getElementById('info').innerText = 'Ищем магазины... Подождите.';
