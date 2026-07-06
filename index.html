@@ -117,11 +117,8 @@
     let currentShopsData = [];
     let isSearching = false;
 
-    const excludedShopTypes = [
-        'florist', 'greengrocer', 'outpost', 'shoes',
-        'pet', 'fishing', 'garden_centre', 'sports',
-        'hardware', 'tyres', 'car_repair'
-    ];
+    // ⚠️ Временно очищен для диагностики; верните нужные исключения после проверки
+    const excludedShopTypes = [];
 
     function log(message, type = 'info') {
         const debugDiv = document.getElementById('debug');
@@ -332,13 +329,18 @@
             if (el.lat === undefined || el.lon === undefined) return;
 
             const shopType = el.tags?.shop || 'магазин';
-            if (excludedShopTypes.includes(shopType)) return;
+            const name = el.tags?.name || 'Магазин';
+
+            // Диагностика: выводим информацию об исключённых
+            if (excludedShopTypes.includes(shopType)) {
+                log(`⛔ Исключён: "${name}" (тип: ${shopType})`, 'error');
+                return;
+            }
 
             const elementKey = `${el.type}/${el.id}`;
             if (addedIds.has(elementKey)) return;
             addedIds.add(elementKey);
 
-            const name = el.tags?.name || 'Магазин';
             const brandInfo = getBrandInfo(name);
             const distance = clickLatLng.distanceTo(L.latLng(el.lat, el.lon));
 
