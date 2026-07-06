@@ -240,7 +240,7 @@
 
         const query = `
         [out:json][timeout:30];
-        node(around:${radius},${lat},${lon})["shop"]
+        nwr(around:${radius},${lat},${lon})["shop"];
             );
             out;
         `;
