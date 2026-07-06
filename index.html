@@ -1,110 +1,3 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Поиск магазинов в радиусе 1 км</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <style>
-        body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
-        #map { height: 100vh; width: 100%; }
-        
-        #info {
-            position: absolute; top: 10px; left: 50px; z-index: 1000;
-            background: white; padding: 10px 15px; border-radius: 5px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2); font-size: 14px;
-            max-width: 400px;
-        }
-        
-        #sidebar {
-            position: absolute;
-            top: 10px; right: 10px; z-index: 1000;
-            background: white; border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.25);
-            width: 320px; max-height: calc(100vh - 20px);
-            display: flex; flex-direction: column; overflow: hidden;
-        }
-        
-        #sidebar-header {
-            padding: 12px 15px;
-            background: #2c3e50; color: white;
-            font-weight: bold; font-size: 15px;
-            border-bottom: 1px solid #ddd;
-        }
-        
-        #category-filters {
-            padding: 8px 15px;
-            border-bottom: 1px solid #ddd;
-            max-height: 150px;
-            overflow-y: auto;
-            background: #fafafa;
-            font-size: 13px;
-        }
-        #category-filters label {
-            display: block;
-            margin: 3px 0;
-            cursor: pointer;
-        }
-        #category-filters input {
-            margin-right: 5px;
-        }
-        
-        #shop-list {
-            overflow-y: auto; flex: 1;
-            padding: 0; margin: 0; list-style: none;
-        }
-        
-        .shop-item {
-            padding: 10px 15px; border-bottom: 1px solid #eee;
-            cursor: pointer; transition: background 0.2s;
-        }
-        .shop-item:hover { background: #f0f8ff; }
-        .shop-item:last-child { border-bottom: none; }
-        
-        .shop-name {
-            font-weight: bold; font-size: 14px; color: #2c3e50;
-            display: flex; align-items: center; gap: 6px;
-        }
-        .shop-color-dot {
-            display: inline-block; width: 10px; height: 10px;
-            border-radius: 50%; border: 1px solid #fff;
-            box-shadow: 0 0 2px rgba(0,0,0,0.5);
-        }
-        .shop-type { font-size: 12px; color: #777; margin-top: 2px; }
-        .shop-address { font-size: 12px; color: #555; margin-top: 2px; }
-        .shop-distance {
-            display: inline-block; margin-top: 5px;
-            padding: 2px 8px; background: #e8f4f8;
-            color: #0066aa; border-radius: 10px;
-            font-size: 12px; font-weight: bold;
-        }
-        .no-shops {
-            padding: 20px; text-align: center;
-            color: #888; font-style: italic;
-        }
-        
-        #debug {
-            position: absolute; bottom: 10px; left: 10px; z-index: 1000;
-            background: rgba(255,255,255,0.95); padding: 10px; border-radius: 5px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2); font-size: 12px;
-            max-width: 500px; max-height: 200px; overflow-y: auto;
-            display: none;
-        }
-        .error { color: red; }
-        .success { color: green; }
-    </style>
-</head>
-<body>
-<div id="info">Кликните в любую точку на карте, чтобы найти магазины в радиусе 1 км</div>
-<div id="sidebar">
-    <div id="sidebar-header">Список магазинов</div>
-    <div id="category-filters"></div>
-    <ul id="shop-list"><li class="no-shops">Кликните по карте для поиска</li></ul>
-</div>
-<div id="debug"></div>
-<div id="map"></div>
-
 <script>
     const map = L.map('map').setView([55.751244, 37.618423], 11);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -114,7 +7,7 @@
     let currentCircle = null;
     let currentMarkers = L.layerGroup().addTo(map);
     let clickLatLng = null;
-    let currentShopsData = []; // все магазины текущего поиска
+    let currentShopsData = [];
 
     function log(message, type = 'info') {
         const debugDiv = document.getElementById('debug');
@@ -142,16 +35,13 @@
         return { color: '#999', brand: name };
     }
 
-    // Построение списка магазинов с учётом активных категорий
     function renderShopList() {
         const selectedTypes = getSelectedTypes();
         const filtered = currentShopsData.filter(shop => selectedTypes.has(shop.type));
         
-        // обновляем маркеры на карте
         currentMarkers.clearLayers();
         filtered.forEach(shop => currentMarkers.addLayer(shop.marker));
         
-        // обновляем список в панели
         const list = document.getElementById('shop-list');
         list.innerHTML = '';
         if (filtered.length === 0) {
@@ -182,25 +72,18 @@
         document.getElementById('info').innerText = `Отображено магазинов: ${filtered.length} из ${currentShopsData.length}`;
     }
 
-    // Сбор отмеченных типов
     function getSelectedTypes() {
         const checkboxes = document.querySelectorAll('#category-filters input[type=checkbox]');
         const selected = new Set();
-        checkboxes.forEach(cb => {
-            if (cb.checked) selected.add(cb.value);
-        });
+        checkboxes.forEach(cb => { if (cb.checked) selected.add(cb.value); });
         return selected;
     }
 
-    // Создание чекбоксов категорий на основе данных
     function buildCategoryFilters() {
         const container = document.getElementById('category-filters');
         container.innerHTML = '';
         if (!currentShopsData.length) return;
-
-        // Получаем уникальные типы и сортируем
         const types = [...new Set(currentShopsData.map(s => s.type))].sort();
-        
         types.forEach(type => {
             const label = document.createElement('label');
             const checkbox = document.createElement('input');
@@ -212,6 +95,23 @@
             label.appendChild(document.createTextNode(type));
             container.appendChild(label);
         });
+    }
+
+    // Функция fetch с таймаутом
+    async function fetchWithTimeout(url, timeout = 15000) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
+        try {
+            const response = await fetch(url, {
+                signal: controller.signal,
+                headers: { 'Accept': 'application/json' }
+            });
+            clearTimeout(timeoutId);
+            return response;
+        } catch (error) {
+            clearTimeout(timeoutId);
+            throw error;
+        }
     }
 
     map.on('click', async function(e) {
@@ -236,19 +136,23 @@
         const queryNodes = `[out:json][timeout:30]; node(around:${radius},${lat},${lon})["shop"]; out;`;
         const queryWays = `[out:json][timeout:30]; (way(around:${radius},${lat},${lon})["shop"]; relation(around:${radius},${lat},${lon})["shop"];); out center;`;
 
+        // Оставляем самые стабильные серверы, убираем проблемный openstreetmap.ru
         const servers = [
             'https://overpass-api.de/api/interpreter',
-            'https://overpass.openstreetmap.ru/api/interpreter',
             'https://overpass.kumi.systems/api/interpreter'
+            // при необходимости можно добавить 'https://overpass.openstreetmap.ru/api/interpreter'
         ];
 
         async function fetchOverpass(query) {
             for (const server of servers) {
                 const url = `${server}?data=${encodeURIComponent(query)}`;
                 try {
-                    const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
+                    const resp = await fetchWithTimeout(url);
                     if (resp.ok) return await resp.json();
-                } catch (e) {}
+                    log(`Сервер ${server} ответил статусом ${resp.status}`, 'error');
+                } catch (err) {
+                    log(`Ошибка запроса к ${server}: ${err.message}`, 'error');
+                }
             }
             return null;
         }
@@ -266,7 +170,7 @@
             document.getElementById('info').innerText = 'Магазины не найдены в этом районе';
             currentShopsData = [];
             renderShopList();
-            log('Магазины не найдены', 'error');
+            log('Магазины не найдены или ошибка сети', 'error');
             return;
         }
 
@@ -275,7 +179,6 @@
 
         allElements.forEach(el => {
             if (el.lat === undefined || el.lon === undefined) return;
-
             const elementKey = `${el.type}/${el.id}`;
             if (addedIds.has(elementKey)) return;
             addedIds.add(elementKey);
@@ -293,8 +196,6 @@
                 radius: 7, fillColor: brandInfo.color, color: '#fff',
                 weight: 2, opacity: 1, fillOpacity: 0.9
             });
-            // маркер пока не добавляем на карту, будем управлять через renderShopList
-
             marker.bindPopup(`
                 <b>${brandInfo.brand}</b><br>
                 Тип: ${shopType}<br>
@@ -315,16 +216,13 @@
         });
 
         currentShopsData = shopsData;
-        buildCategoryFilters();  // создаём чекбоксы
-        renderShopList();        // первый показ с учётом фильтров (все включены)
+        buildCategoryFilters();
+        renderShopList();
 
         log(`Загружено магазинов: ${shopsData.length}`, 'success');
-
         if (shopsData.length > 0) {
             const bounds = L.latLngBounds(shopsData.map(s => [s.lat, s.lon]));
             map.fitBounds(bounds, { padding: [50, 50] });
         }
     });
 </script>
-</body>
-</html>
