@@ -208,6 +208,27 @@
         document.getElementById('info').innerText = `Отображено магазинов: ${filtered.length} из ${currentShopsData.length}`;
     }
 
+    // Вычисление центроида по геометрии (для way/relation)
+    function getCentroid(el) {
+        if (el.type === 'node' && el.lat !== undefined && el.lon !== undefined) {
+            return { lat: el.lat, lon: el.lon };
+        }
+        if (el.geometry && Array.isArray(el.geometry) && el.geometry.length > 0) {
+            let sumLat = 0, sumLon = 0, count = 0;
+            el.geometry.forEach(point => {
+                if (point.lat !== undefined && point.lon !== undefined) {
+                    sumLat += point.lat;
+                    sumLon += point.lon;
+                    count++;
+                }
+            });
+            if (count > 0) {
+                return { lat: sumLat / count, lon: sumLon / count };
+            }
+        }
+        return null;
+    }
+
     async function fetchWithRetry(url, timeout = 15000, retries = 3) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeout);
@@ -271,8 +292,9 @@
 
         log(`📍 Координаты: ${lat.toFixed(6)}, ${lon.toFixed(6)}`);
 
+        // Точки запрашиваем как обычно, а для зданий – out geom
         const queryNodes = `[out:json][timeout:30]; node(around:${radius},${lat},${lon})["shop"]; out;`;
-        const queryWays = `[out:json][timeout:30]; (way(around:${radius},${lat},${lon})["shop"]; relation(around:${radius},${lat},${lon})["shop"];); out center;`;
+        const queryWays = `[out:json][timeout:30]; (way(around:${radius},${lat},${lon})["shop"]; relation(around:${radius},${lat},${lon})["shop"];); out geom;`;
 
         const servers = [
             'https://overpass-api.de/api/interpreter',
@@ -323,24 +345,28 @@
         const addedIds = new Set();
 
         allElements.forEach(el => {
-            if (el.lat === undefined || el.lon === undefined) return;
+            // Получаем координаты: для точек – напрямую, для зданий – через центроид геометрии
+            const centroid = getCentroid(el);
+            if (!centroid) {
+                log(`⚠️ Пропущен элемент без координат: ${el.type}/${el.id} (${el.tags?.name || 'без названия'})`, 'error');
+                return;
+            }
 
             const shopType = el.tags?.shop || 'магазин';
             const name = el.tags?.name || 'Магазин';
 
-            // Никаких исключений — берём все магазины
             const elementKey = `${el.type}/${el.id}`;
             if (addedIds.has(elementKey)) return;
             addedIds.add(elementKey);
 
             const brandInfo = getBrandInfo(name);
-            const distance = clickLatLng.distanceTo(L.latLng(el.lat, el.lon));
+            const distance = clickLatLng.distanceTo(L.latLng(centroid.lat, centroid.lon));
 
             const address = el.tags?.['addr:street']
                 ? el.tags['addr:street'] + (el.tags['addr:housenumber'] ? ', ' + el.tags['addr:housenumber'] : '')
                 : '';
 
-            const marker = L.circleMarker([el.lat, el.lon], {
+            const marker = L.circleMarker([centroid.lat, centroid.lon], {
                 radius: 7, fillColor: brandInfo.color, color: '#fff',
                 weight: 2, opacity: 1, fillOpacity: 0.9
             });
@@ -357,8 +383,8 @@
                 type: shopType,
                 address: address,
                 color: brandInfo.color,
-                lat: el.lat,
-                lon: el.lon,
+                lat: centroid.lat,
+                lon: centroid.lon,
                 distance: distance,
                 marker: marker
             });
