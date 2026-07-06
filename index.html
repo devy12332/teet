@@ -99,7 +99,7 @@
             background: rgba(255,255,255,0.95); padding: 10px; border-radius: 5px;
             box-shadow: 0 2px 5px rgba(0,0,0,0.2); font-size: 12px;
             max-width: 500px; max-height: 200px; overflow-y: auto;
-            display: none;
+            display: block; /* всегда видна для диагностики */
         }
         .error { color: red; }
         .success { color: green; }
@@ -128,9 +128,9 @@
     let currentMarkers = L.layerGroup().addTo(map);
     let clickLatLng = null;
     let currentShopsData = [];
-    let isSearching = false; // ✅ защита от повторных кликов
+    let isSearching = false;
 
-    // Категории, которые полностью исключаются из поиска
+    // Исключаемые типы магазинов (полностью убираются из результатов)
     const excludedShopTypes = [
         'florist', 'greengrocer', 'outpost', 'shoes',
         'pet', 'fishing', 'garden_centre', 'sports',
@@ -202,7 +202,6 @@
             filtered = filtered.filter(shop => shop.brand.toLowerCase().includes(lowerFilter));
         }
 
-        // Обновляем маркеры на карте
         currentMarkers.clearLayers();
         filtered.forEach(shop => currentMarkers.addLayer(shop.marker));
 
@@ -239,7 +238,7 @@
         renderShopList(e.target.value);
     });
 
-    // ✅ Функция для запросов с защитой от 429 (Too Many Requests)
+    // Улучшенная функция запроса с подробными логами
     async function fetchWithRetry(url, timeout = 15000, retries = 3) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeout);
@@ -253,14 +252,14 @@
                 clearTimeout(timeoutId);
 
                 if (response.status === 429) {
-                    const delay = Math.pow(2, attempt) * 1000; // 2, 4, 8 секунд
-                    log(`Ошибка 429, попытка ${attempt}/${retries}, ожидание ${delay/1000}с...`, 'error');
+                    const delay = Math.pow(2, attempt) * 1000;
+                    log(`⚠️ 429 Too Many Requests. Повтор через ${delay/1000}с (попытка ${attempt}/${retries})`, 'error');
                     await new Promise(resolve => setTimeout(resolve, delay));
                     continue;
                 }
 
                 if (!response.ok) {
-                    log(`Сервер ответил статусом ${response.status}`, 'error');
+                    log(`❌ Ошибка HTTP ${response.status}`, 'error');
                     return null;
                 }
 
@@ -268,10 +267,10 @@
             } catch (error) {
                 clearTimeout(timeoutId);
                 if (attempt < retries) {
-                    log(`Ошибка сети: ${error.message}, попытка ${attempt}/${retries}`, 'error');
-                    await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
+                    log(`⏳ Сетевая ошибка: ${error.message}. Повтор через 2с.`, 'error');
+                    await new Promise(resolve => setTimeout(resolve, 2000));
                 } else {
-                    log(`Ошибка сети после ${retries} попыток: ${error.message}`, 'error');
+                    log(`❌ Не удалось выполнить запрос после ${retries} попыток: ${error.message}`, 'error');
                 }
             }
         }
@@ -279,9 +278,8 @@
     }
 
     map.on('click', async function(e) {
-        // ✅ Защита от повторного клика во время поиска
         if (isSearching) {
-            log('Идёт поиск, подождите...', 'error');
+            log('⏳ Подождите, идёт поиск...', 'error');
             return;
         }
 
@@ -303,34 +301,46 @@
             radius: radius, color: '#3388ff', fillOpacity: 0.1
         }).addTo(map);
 
-        log(`Координаты: ${lat.toFixed(6)}, ${lon.toFixed(6)}`);
+        log(`📍 Координаты: ${lat.toFixed(6)}, ${lon.toFixed(6)}`);
 
         const queryNodes = `[out:json][timeout:30]; node(around:${radius},${lat},${lon})["shop"]; out;`;
         const queryWays = `[out:json][timeout:30]; (way(around:${radius},${lat},${lon})["shop"]; relation(around:${radius},${lat},${lon})["shop"];); out center;`;
 
-        // Используем только стабильные серверы (openstreetmap.ru убран)
         const servers = [
             'https://overpass-api.de/api/interpreter',
             'https://overpass.kumi.systems/api/interpreter'
         ];
 
-        async function fetchOverpass(query) {
+        async function fetchOverpass(query, label) {
             for (const server of servers) {
                 const url = `${server}?data=${encodeURIComponent(query)}`;
+                log(`🔍 ${label}: попытка сервер ${server.split('/')[2]}`);
                 const data = await fetchWithRetry(url);
-                if (data) return data;
+                if (data) {
+                    log(`✅ ${label}: получено ${data.elements ? data.elements.length : 0} элементов`, 'success');
+                    return data;
+                }
             }
+            log(`❌ ${label}: не удалось получить данные`, 'error');
             return null;
         }
 
         const [dataNodes, dataWays] = await Promise.all([
-            fetchOverpass(queryNodes),
-            fetchOverpass(queryWays)
+            fetchOverpass(queryNodes, 'Точки (node)'),
+            fetchOverpass(queryWays, 'Здания (way/relation)')
         ]);
 
         const allElements = [];
-        if (dataNodes && dataNodes.elements) allElements.push(...dataNodes.elements);
-        if (dataWays && dataWays.elements) allElements.push(...dataWays.elements);
+        if (dataNodes && dataNodes.elements) {
+            log(`📊 Точек загружено: ${dataNodes.elements.length}`);
+            allElements.push(...dataNodes.elements);
+        }
+        if (dataWays && dataWays.elements) {
+            log(`📊 Зданий загружено: ${dataWays.elements.length}`);
+            allElements.push(...dataWays.elements);
+        } else {
+            log(`⚠️ Здания не получены. Проверьте подключение или повторите позже.`, 'error');
+        }
 
         if (allElements.length === 0) {
             document.getElementById('info').innerText = 'Магазины не найдены в этом районе';
@@ -390,14 +400,13 @@
         buildCategoryFilters();
         renderShopList();
 
-        log(`Загружено магазинов: ${shopsData.length}`, 'success');
+        log(`🎯 Всего отфильтрованных магазинов: ${shopsData.length}`, 'success');
 
         if (shopsData.length > 0) {
             const bounds = L.latLngBounds(shopsData.map(s => [s.lat, s.lon]));
             map.fitBounds(bounds, { padding: [50, 50] });
         }
 
-        // Разблокируем клики через 1.5 секунды после завершения
         setTimeout(() => {
             isSearching = false;
         }, 1500);
