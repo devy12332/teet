@@ -262,6 +262,10 @@
                 const response = await fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' } });
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 data = await response.json();
+                console.log('Получено элементов:', data.elements.length);
+                data.elements.forEach(el => {
+                console.log(`Тип: ${el.type}, ID: ${el.id}, lat: ${el.lat}, lon: ${el.lon}, name: ${el.tags?.name}`);
+            });
                 log(`Успешно получены данные`, 'success');
                 break;
             } catch (error) {
