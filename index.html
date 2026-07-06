@@ -236,14 +236,11 @@ map.on('click', async function(e) {
 
     log(`Координаты: ${lat.toFixed(6)}, ${lon.toFixed(6)}`);
 
-    // ===== Новый запрос: получаем полную геометрию =====
     const query = `
         [out:json][timeout:30];
         nwr(around:${radius},${lat},${lon})["shop"];
         out geom;
     `;
-
-    console.log('Запрос:', query);
 
     const servers = [
         `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`,
@@ -275,8 +272,6 @@ map.on('click', async function(e) {
         return;
     }
 
-    console.log('Всего элементов в ответе:', data.elements?.length || 0);
-
     if (!data.elements || data.elements.length === 0) {
         document.getElementById('info').innerText = 'Магазины не найдены в этом районе';
         renderShopList([]);
@@ -286,14 +281,11 @@ map.on('click', async function(e) {
     const shopsData = [];
     const addedIds = new Set();
 
-    // === Функция вычисления центра геометрии ===
     function getCentroid(el) {
-        // Для node – просто lat/lon
         if (el.type === 'node' && el.lat !== undefined && el.lon !== undefined) {
             return { lat: el.lat, lon: el.lon };
         }
-        // Для way/relation – geometry должна быть массивом точек (или одиночной точкой)
-        if (el.geometry && Array.isArray(el.geometry)) {
+        if (el.geometry && Array.isArray(el.geometry) && el.geometry.length > 0) {
             let sumLat = 0, sumLon = 0, count = 0;
             el.geometry.forEach(point => {
                 if (point.lat !== undefined && point.lon !== undefined) {
@@ -306,7 +298,7 @@ map.on('click', async function(e) {
                 return { lat: sumLat / count, lon: sumLon / count };
             }
         }
-        return null; // не удалось определить координаты
+        return null;
     }
 
     data.elements.forEach(el => {
@@ -355,15 +347,13 @@ map.on('click', async function(e) {
             distance: distance,
             marker: marker
         });
-
-        console.log(`+ ${elementKey}: ${name} (${shopType}) [${distance.toFixed(0)} м]`);
     });
 
     renderShopList(shopsData);
     document.getElementById('info').innerText = `Найдено магазинов: ${shopsData.length} (в радиусе 1 км)`;
     log(`Отображено: ${shopsData.length} магазинов`, 'success');
 
-    // Исправляем ошибку fitBounds – собираем границы вручную
+    // ПРАВИЛЬНОЕ МАСШТАБИРОВАНИЕ БЕЗ getBounds()
     if (shopsData.length > 0) {
         const bounds = L.latLngBounds(shopsData.map(s => [s.lat, s.lon]));
         map.fitBounds(bounds, { padding: [50, 50] });
